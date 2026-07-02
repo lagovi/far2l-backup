@@ -1,21 +1,23 @@
 #!/bin/bash
 
 # Параметры запуска
-GH_USER="${1}"
-GH_REPO="${2}"
+GH_USER="${1:-lagovi}"
+GH_REPO="${2:-far2l-backup}"
 GH_BRANCH="${3:-main}"
-
-if [ -z "$GH_USER" ] || [ -z "$GH_REPO" ]; then
-    echo "Ошибка запуска. Использование:"
-    echo "curl -sL <ссылка> | bash -s -- <пользователь> <репозиторий> [ветка]"
-    exit 1
-fi
 
 FAR_CONFIG_DIR="$HOME/.config/far2l"
 BACKUP_DIR="$HOME/far2l-config-backup"
 
 echo "=== Начало восстановления настроек и развертывания инфраструктуры ==="
 echo "Репозиторий источника: https://github.com/$GH_USER/$GH_REPO ($GH_BRANCH)"
+
+# ПРОВЕРКА: запущен ли far2l в контексте текущего пользователя
+if pgrep -u "$(id -u)" -x "far2l" > /dev/null; then
+    echo "⚠️ ОШИБКА: Обнаружен запущенный процесс far2l!"
+    echo "Если мы восстановим настройки сейчас, работающий far2l перезапишет их при выходе."
+    echo "Пожалуйста, полностью выберите Выход (F10) в far2l и запустите этот скрипт из обычного терминала."
+    exit 1
+fi
 
 # Безопасный перенос существующих настроек far2l в бэкап-папку, если они есть
 if [ -d "$FAR_CONFIG_DIR" ]; then
