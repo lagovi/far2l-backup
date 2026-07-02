@@ -21,24 +21,23 @@ echo "Репозиторий: $GH_USER/$GH_REPO (ветка: $GH_BRANCH)"
 
 # Проверка unzip
 if ! command -v unzip &> /dev/null; then
-    echo "Ошибка: утилита 'unzip' не найдена. Пожалуйста, установите её (например: sudo apt install unzip)."
+    echo "Ошибка: утилита 'unzip' не найдена. Пожалуйста, установите её."
     exit 1
 fi
 
-# Если конфигурация far2l уже существует, сохраняем её копию во избежание потери данных
+# Резервная копия старых настроек
 if [ -d "$FAR_CONFIG_DIR" ]; then
     BACKUP_PATH="${FAR_CONFIG_DIR}_old_$(date +%Y%m%d_%H%M%S)"
-    echo "Обнаружена существующая папка настроек far2l. Переносим в $BACKUP_PATH"
+    echo "Обнаружена существующая папка настроек. Переносим в $BACKUP_PATH"
     mv "$FAR_CONFIG_DIR" "$BACKUP_PATH"
 fi
 
-# Скачивание ZIP-архива
+# Скачивание архива
 echo "Загрузка архива..."
 HTTP_CODE=$(curl -sL -w "%{http_code}" "$ZIP_URL" -o "$TEMP_ZIP")
 
-# Если ветка main выдала 404, пробуем master
 if [ "$HTTP_CODE" -ne 200 ] && [ "$GH_BRANCH" = "main" ]; then
-    echo "Файл в ветке 'main' не найден (HTTP $HTTP_CODE). Пробуем ветку 'master'..."
+    echo "Файл в ветке 'main' не найден. Пробуем ветку 'master'..."
     GH_BRANCH="master"
     ZIP_URL="https://github.com/${GH_USER}/${GH_REPO}/archive/refs/heads/${GH_BRANCH}.zip"
     HTTP_CODE=$(curl -sL -w "%{http_code}" "$ZIP_URL" -o "$TEMP_ZIP")
@@ -50,19 +49,29 @@ if [ "$HTTP_CODE" -ne 200 ]; then
     exit 1
 fi
 
-# Распаковка и применение
+# Распаковка
 echo "Распаковка настроек..."
 mkdir -p "$TEMP_DIR"
 unzip -q "$TEMP_ZIP" -d "$TEMP_DIR"
 
-# GitHub вкладывает файлы в поддиректорию вида <имя_репозитория>-<ветка>
 EXTRACTED_SUBDIR=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -type d | head -n 1)
 
 if [ -d "$EXTRACTED_SUBDIR/settings" ]; then
     mkdir -p "$FAR_CONFIG_DIR"
+    
+    # 1. Восстановление настроек
     cp -r "$EXTRACTED_SUBDIR/settings" "$FAR_CONFIG_DIR/"
+    
+    # 2. Восстановление плагинов
     if [ -d "$EXTRACTED_SUBDIR/plugins" ]; then
         cp -r "$EXTRACTED_SUBDIR/plugins" "$FAR_CONFIG_DIR/"
+    fi
+    
+    # 3. Восстановление корневых файлов палитры и соли
+    for file in palette.ini askpass.salt; do
+        if [ -f "$EXTRACTED_SUBDIR/$file" ]; then
+            cp "$EXTRACTED_SUBDIR/$file" "$FAR_CONFIG_DIR/"
+        fi
     fi
     echo "Настройки успешно восстановлены!"
 else
@@ -71,6 +80,5 @@ else
     exit 1
 fi
 
-# Очистка временных файлов
 rm -rf "$TEMP_DIR" "$TEMP_ZIP"
 echo "=== Восстановление завершено ==="

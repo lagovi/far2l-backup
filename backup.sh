@@ -6,36 +6,52 @@ FAR_CONFIG_DIR="$HOME/.config/far2l"
 
 echo "=== Запуск резервного копирования far2l ==="
 
-# Создаем нужную структуру папок в бэкапе
-mkdir -p "$REPO_DIR/settings"
-mkdir -p "$REPO_DIR/plugins/NetRocks"
+# Очищаем старые копии файлов в репозитории (кроме самого git и скриптов)
+# чтобы удаленные в far2l плагины/настройки также удалялись из бэкапа
+echo "Очистка старой структуры бэкапа..."
+find "$REPO_DIR" -mindepth 1 -maxdepth 1 ! -name ".git" ! -name ".gitignore" ! -name "backup.sh" ! -name "restore.sh" -exec rm -rf {} +
 
-# 1. Копируем основные настройки
+# Создаем базовые директории
+mkdir -p "$REPO_DIR/settings"
+
+# 1. Копируем основные настройки settings/
 echo "Копирование настроек..."
 if [ -d "$FAR_CONFIG_DIR/settings" ]; then
     cp -r "$FAR_CONFIG_DIR"/settings/* "$REPO_DIR/settings/"
 fi
 
-# 2. Копируем сайты NetRocks и вырезаем пароли
-if [ -f "$FAR_CONFIG_DIR/plugins/NetRocks/sites.cfg" ]; then
-    echo "Копирование сайтов NetRocks..."
-    cp "$FAR_CONFIG_DIR/plugins/NetRocks/sites.cfg" "$REPO_DIR/plugins/NetRocks/sites.cfg"
-    
-    # Очистка зашифрованных и открытых паролей (Password и PasswordPlain)
-    echo "Очистка паролей в файле бэкапа..."
+# 2. Автоматический поиск и копирование всех конфигов плагинов (.ini и .cfg), кроме state.ini
+echo "Поиск и копирование конфигураций плагинов..."
+if [ -d "$FAR_CONFIG_DIR/plugins" ]; then
+    cd "$FAR_CONFIG_DIR" || exit 1
+    find plugins -type f \( -name "*.ini" -o -name "*.cfg" \) ! -name "state.ini" | while read -r file; do
+        mkdir -p "$REPO_DIR/$(dirname "$file")"
+        cp "$file" "$REPO_DIR/$file"
+    done
+fi
+
+# 3. Очистка паролей в сайтах NetRocks (если файл был скопирован)
+if [ -f "$REPO_DIR/plugins/NetRocks/sites.cfg" ]; then
+    echo "Очистка паролей в NetRocks sites.cfg..."
     sed -E -i 's/^([[:space:]]*(Password|PasswordPlain)[[:space:]]*=[[:space:]]*).*/\1/' "$REPO_DIR/plugins/NetRocks/sites.cfg"
 fi
 
-# 3. Создаем базовый .gitignore
+# 4. Копируем файлы палитры и соли (если они существуют в корне настроек)
+for file in palette.ini askpass.salt; do
+    if [ -f "$FAR_CONFIG_DIR/$file" ]; then
+        cp "$FAR_CONFIG_DIR/$file" "$REPO_DIR/$file"
+    fi
+done
+
+# 5. Создаем .gitignore
 cat << 'GITIGNORE' > "$REPO_DIR/.gitignore"
 .DS_Store
 *.log
 GITIGNORE
 
-# 4. Отправка изменений в Git
+# 6. Отправка изменений в Git
 cd "$REPO_DIR" || exit 1
 
-# Инициализируем репозиторий, если этого еще не сделано
 if [ ! -d ".git" ]; then
     echo "Инициализация Git-репозитория..."
     git init
@@ -47,14 +63,11 @@ if git diff-index --quiet HEAD --; then
     echo "Изменений в конфигурации не обнаружено."
 else
     git commit -m "Автоматический бэкап: $(date '+%Y-%m-%d %H:%M:%S')"
-    # Пробуем отправить изменения (если remote настроен)
     if git remote | grep -q 'origin'; then
         echo "Отправка изменений на GitHub..."
         git push origin main || git push origin master
     else
         echo "Предупреждение: Удаленный репозиторий (origin) еще не настроен."
-        echo "Пожалуйста, свяжите этот каталог с GitHub командой:"
-        echo "  git remote add origin <URL_ВАШЕГО_ПУБЛИЧНОГО_РЕПО>"
     fi
 fi
 
